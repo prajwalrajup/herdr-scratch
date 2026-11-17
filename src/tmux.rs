@@ -336,11 +336,26 @@ impl TmuxServer<'_> {
             command.args(tmux_args(self.mode));
         }
         command
+            .env("PATH", path_with_tmux_dirs())
             .env("TMUX_TMPDIR", self.state_dir)
             .env_remove("TMUX")
             .env_remove("TMUX_PANE");
         command
     }
+}
+
+/// Herdr starts plugins with a minimal PATH that omits Homebrew, where tmux lives.
+fn path_with_tmux_dirs() -> std::ffi::OsString {
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect())
+        .unwrap_or_default();
+    for extra in ["/opt/homebrew/bin", "/usr/local/bin"] {
+        let extra = PathBuf::from(extra);
+        if !dirs.contains(&extra) {
+            dirs.push(extra);
+        }
+    }
+    std::env::join_paths(dirs).unwrap_or_default()
 }
 
 fn session_metadata_needs_recreation(
@@ -774,6 +789,15 @@ mod tests {
             tmux_args(crate::config::TmuxMode::Minimal),
             ["-L", MINIMAL_SERVER_NAME, "-f", "/dev/null"]
         );
+    }
+
+    #[test]
+    fn tmux_path_includes_homebrew_dirs_once() {
+        let path = path_with_tmux_dirs();
+        let dirs: Vec<_> = std::env::split_paths(&path).collect();
+        for extra in ["/opt/homebrew/bin", "/usr/local/bin"] {
+            assert_eq!(dirs.iter().filter(|dir| dir.as_os_str() == extra).count(), 1);
+        }
     }
 
     #[test]
